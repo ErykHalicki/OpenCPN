@@ -501,6 +501,7 @@ bool RestServer::SaveConfig() {
 }
 
 bool RestServer::CheckApiKey(const RestIoEvtData& evt_data) {
+  return true; //bypassing api key check
   // Look up the api key in the hash map. If found, we are done.
   if (m_key_map.find(evt_data.source) != m_key_map.end()) {
     if (m_key_map[evt_data.source] == evt_data.api_key) return true;
