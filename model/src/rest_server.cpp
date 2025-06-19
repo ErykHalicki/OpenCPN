@@ -598,8 +598,18 @@ void RestServer::HandleServerMessage(ObservedEvt& event) {
       std::stringstream ss;
       ss << "[";
       for (auto& r : *pRouteList) {
+        std::string gpx_string;
+        std::ostringstream oss;
+
+        NavObjectCollection1 pgpx;
+        pgpx.AddGPXRoute(r);
+        pugi::xml_node doc = pgpx.root();
+        doc.print(oss);
+        gpx_string = oss.str();
+
+
         if (ss.str() != "[") ss << ", ";
-        ss << "[ \"" << r->GetGUID() << "\", \"" << r->GetName() << "\"]";
+        ss << "[ \"" << r->GetGUID() << "\", \"" << r->GetName() << "\", \""<< gpx_string << "\"]";
       }
       ss << "]";
       std::string reply(kListRoutesReply);
