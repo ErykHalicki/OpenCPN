@@ -832,15 +832,21 @@ static bool GPXCreateWpt(pugi::xml_node node, RoutePoint *pr,
     }
 
     // Add custom extensions (exclude top-level <extensions> tag)
-    if (!pr->m_customExtensions.empty()) {
-      pugi::xml_node custom_extensions_root = pr->m_customExtensions.child("extensions");
-      if (custom_extensions_root) {
-        for (pugi::xml_node custom_child = custom_extensions_root.first_child();
-             custom_child;
-             custom_child = custom_child.next_sibling()) {
-          child_ext.append_copy(custom_child);
+    try {
+      if (!pr->m_customExtensions.empty()) {
+        pugi::xml_node custom_extensions_root = pr->m_customExtensions.child("extensions");
+        if (custom_extensions_root) {
+          for (pugi::xml_node custom_child = custom_extensions_root.first_child();
+               custom_child;
+               custom_child = custom_child.next_sibling()) {
+            child_ext.append_copy(custom_child);
+          }
         }
       }
+    } catch (const std::exception& e) {
+      std::cerr << "Custom extensions error in GPXCreateWpt: " << e.what() << std::endl;
+    } catch (...) {
+      std::cerr << "Unknown error in GPXCreateWpt custom extensions" << std::endl;
     }
   }
 

@@ -163,9 +163,17 @@ public:
     m_wxcWaypointRangeRingsColour = wxc_WaypointRangeRingsColour;
   };
   void SetCustomExtensions(const pugi::xml_document& customExtensions){
-    m_customExtensions.reset();
-    for (pugi::xml_node child = customExtensions.first_child(); child; child = child.next_sibling()) {
-      m_customExtensions.append_copy(child);
+    try {
+      m_customExtensions.reset();
+      for (pugi::xml_node child = customExtensions.first_child(); child; child = child.next_sibling()) {
+        m_customExtensions.append_copy(child);
+      }
+    } catch (const std::exception& e) {
+      std::cout << "SetCustomExtensions error: " << e.what() << std::endl;
+      m_customExtensions.reset();
+    } catch (...) {
+      std::cout << "Unknown error in SetCustomExtensions" << std::endl;
+      m_customExtensions.reset();
     }
   }
   void SetTideStation(wxString TideStation) { m_TideStation = TideStation; };
