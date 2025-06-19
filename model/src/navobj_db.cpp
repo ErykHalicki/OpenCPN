@@ -1962,11 +1962,11 @@ bool NavObj_dB::LoadAllPoints() {
         pugi::xml_parse_result result = point->m_customExtensions.load_string(xml_string.c_str());
         if (!result) {
           // Handle parse error - reset to empty
-          point->SetCustomExtensions(pugi::xml_document());
+          point->m_customExtensions.reset();
         }
       } else {
         // No extensions stored - set empty
-        point->SetCustomExtensions(pugi::xml_document());
+        point->m_customExtensions.reset();
       }
 
       if (point_time_string.size()) {

@@ -162,8 +162,11 @@ public:
   void SetWaypointRangeRingsColour(wxColour wxc_WaypointRangeRingsColour) {
     m_wxcWaypointRangeRingsColour = wxc_WaypointRangeRingsColour;
   };
-  void SetCustomExtensions(pugi::xml_document customExtensions){
-    m_customExtensions = customExtensions;
+  void SetCustomExtensions(const pugi::xml_document& customExtensions){
+    m_customExtensions.reset();
+    for (pugi::xml_node child = customExtensions.first_child(); child; child = child.next_sibling()) {
+      m_customExtensions.append_copy(child);
+    }
   }
   void SetTideStation(wxString TideStation) { m_TideStation = TideStation; };
   void SetScaMin(wxString str);
@@ -613,6 +616,7 @@ private:
   bool m_bsharedMark /*m_bKeepXRoute*/;
   unsigned int m_dragIconTexture;
   int m_dragIconTextureWidth, m_dragIconTextureHeight;
+public:
   pugi::xml_document m_customExtensions;
 };
 
