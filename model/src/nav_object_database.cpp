@@ -75,6 +75,9 @@ RoutePoint *GPXLoadWaypoint1(pugi::xml_node &wpt_node, wxString def_symbol_name,
   wxColour l_wxcWaypointRangeRingsColour;
   l_wxcWaypointRangeRingsColour.Set(_T( "#FFFFFF" ));
 
+  pugi::xml_document customExtensions;
+  pugi::xml_node extensions_root = customExtensions.append_child("extensions");
+
   for (pugi::xml_node child = wpt_node.first_child(); child != 0;
        child = child.next_sibling()) {
     const char *pcn = child.name();
@@ -150,11 +153,11 @@ RoutePoint *GPXLoadWaypoint1(pugi::xml_node &wpt_node, wxString def_symbol_name,
             long v = 0;
             if (s.ToLong(&v)) bshared = (v != 0);
           }
-          if (ext_name == _T ( "opencpn:arrival_radius" )) {
+          else if (ext_name == _T ( "opencpn:arrival_radius" )) {
             wxString::FromUTF8(ext_child.first_child().value())
                 .ToDouble(&ArrivalRadius);
           }
-          if (ext_name == _T("opencpn:waypoint_range_rings")) {
+          else if (ext_name == _T("opencpn:waypoint_range_rings")) {
             for (pugi::xml_attribute attr = ext_child.first_attribute(); attr;
                  attr = attr.next_attribute()) {
               if (wxString::FromUTF8(attr.name()) == _T("number"))
@@ -170,7 +173,7 @@ RoutePoint *GPXLoadWaypoint1(pugi::xml_node &wpt_node, wxString def_symbol_name,
                     wxString::FromUTF8(attr.as_string()));
             }
           }
-          if (ext_name == _T("opencpn:scale_min_max")) {
+          else if (ext_name == _T("opencpn:scale_min_max")) {
             for (pugi::xml_attribute attr = ext_child.first_attribute(); attr;
                  attr = attr.next_attribute()) {
               if (wxString::FromUTF8(attr.name()) == _T("UseScale"))
@@ -181,10 +184,10 @@ RoutePoint *GPXLoadWaypoint1(pugi::xml_node &wpt_node, wxString def_symbol_name,
                 l_iWaypoinScaleMax = attr.as_float();
             }
           }
-          if (ext_name == _T ( "opencpn:tidestation" )) {
+          else if (ext_name == _T ( "opencpn:tidestation" )) {
             TideStation = wxString::FromUTF8(ext_child.first_child().value());
           }
-          if (ext_name == _T ( "opencpn:rte_properties" )) {
+          else if (ext_name == _T ( "opencpn:rte_properties" )) {
             for (pugi::xml_attribute attr = ext_child.first_attribute(); attr;
                  attr = attr.next_attribute()) {
               if (!strcmp(attr.name(), "planned_speed"))
@@ -195,6 +198,12 @@ RoutePoint *GPXLoadWaypoint1(pugi::xml_node &wpt_node, wxString def_symbol_name,
                 // So assume the ETD has always been saved in UTC.
                 etd = attr.as_string();
             }
+          }
+          //    Custom Extensions....
+          else{ //if none of the opencpn extensions
+          //save extension xml into waypoint for future gpx exporting
+          //this way the extensions used by other applications arent deleted on load
+            extensions_root.append_copy(ext_child);
           }
         }  // for
       }  // extensions
@@ -216,6 +225,7 @@ RoutePoint *GPXLoadWaypoint1(pugi::xml_node &wpt_node, wxString def_symbol_name,
   pWP->SetWaypointRangeRingsStep(l_fWaypointRangeRingsStep);
   pWP->SetWaypointRangeRingsStepUnits(l_pWaypointRangeRingsStepUnits);
   pWP->SetShowWaypointRangeRings(l_bWaypointRangeRingsVisible);
+  pWP->SetCustomExtensions(customExtensions);
 
   // Migrate from O4.x XML format.
   // In O5, the attribute "range rings visible" is synonymous with ( "range
@@ -735,7 +745,8 @@ static bool GPXCreateWpt(pugi::xml_node node, RoutePoint *pr,
 
   if ((flags & OUT_GUID) || (flags & OUT_VIZ) || (flags & OUT_VIZ_NAME) ||
       (flags & OUT_SHARED) || (flags & OUT_EXTENSION) ||
-      (flags & OUT_TIDE_STATION) || (flags & OUT_RTE_PROPERTIES)) {
+      (flags & OUT_TIDE_STATION) || (flags & OUT_RTE_PROPERTIES) ||
+      (!pr->m_customExtensions.empty())) {
     pugi::xml_node child_ext = node.append_child("extensions");
 
     if (!pr->m_GUID.IsEmpty() && (flags & OUT_GUID)) {
@@ -817,6 +828,18 @@ static bool GPXCreateWpt(pugi::xml_node node, RoutePoint *pr,
         // TODO: serialize using ISO 8601 or RFC 3339 format to ensure
         // the serialized date/time is unambiguous.
         use.set_value(pr->GetManualETD().FormatISOCombined().mb_str());
+      }
+    }
+
+    // Add custom extensions (exclude top-level <extensions> tag)
+    if (!pr->m_customExtensions.empty()) {
+      pugi::xml_node custom_extensions_root = pr->m_customExtensions.child("extensions");
+      if (custom_extensions_root) {
+        for (pugi::xml_node custom_child = custom_extensions_root.first_child();
+             custom_child;
+             custom_child = custom_child.next_sibling()) {
+          child_ext.append_copy(custom_child);
+        }
       }
     }
   }

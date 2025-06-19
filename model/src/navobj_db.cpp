@@ -139,7 +139,8 @@ bool CreateTables(sqlite3* db) {
             viz_name INTEGER,
             shared INTEGER,
             isolated INTEGER,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            custom_extensions TEXT
         );
 
         CREATE TABLE IF NOT EXISTS routepoints_link (
@@ -1371,7 +1372,8 @@ bool NavObj_dB::UpdateDBRoutePointAttributes(RoutePoint* point) {
       "visibility = ?, "
       "viz_name = ?, "
       "shared = ?, "
-      "isolated = ? "
+      "isolated = ?,"
+      "custom_extensions = ? "
       "WHERE guid = ?";
 
   sqlite3_stmt* stmt;
@@ -1416,7 +1418,16 @@ bool NavObj_dB::UpdateDBRoutePointAttributes(RoutePoint* point) {
     int iso = point->m_bIsolatedMark;
     sqlite3_bind_int(stmt, 23, iso);  // point->m_bIsolatedMark);
 
-    sqlite3_bind_text(stmt, 24, point->m_GUID.ToStdString().c_str(), -1,
+    std::ostringstream stream;
+    if (!point->m_customExtensions.empty()) {
+      point->m_customExtensions.save(stream, "  ");
+      sqlite3_bind_text(stmt, 24, stream.str().c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+      sqlite3_bind_null(stmt, 24);
+    }
+
+
+    sqlite3_bind_text(stmt, 25, point->m_GUID.ToStdString().c_str(), -1,
                       SQLITE_TRANSIENT);
 
   } else {
@@ -1613,7 +1624,8 @@ bool NavObj_dB::LoadAllRoutes() {
         "p.visibility, "
         "p.viz_name, "
         "p.shared, "
-        "p.isolated "
+        "p.isolated, "
+        "p.custom_extensions"
         "FROM routepoints_link tp "
         "JOIN routepoints p ON p.guid = tp.point_guid "
         "WHERE tp.route_guid = ? "
@@ -1689,6 +1701,9 @@ bool NavObj_dB::LoadAllRoutes() {
       int shared = sqlite3_column_int(stmtp, col++);
       int isolated = sqlite3_column_int(stmtp, col++);
 
+      std::string xml_string = reinterpret_cast<const char*>(sqlite3_column_text(stmtp, col++));
+
+
       RoutePoint* point;
       // RoutePoint exists already, in another route?
       auto containing_route =
@@ -1725,6 +1740,17 @@ bool NavObj_dB::LoadAllRoutes() {
         point->SetNameShown(viz_name == 1);
         point->SetShared(shared == 1);
         point->m_bIsolatedMark = (isolated == 1);
+
+        if (!xml_string.empty()) {
+          pugi::xml_parse_result result = point->m_customExtensions.load_string(xml_string.c_str());
+          if (!result) {
+            // Handle parse error - reset to empty
+            point->SetCustomExtensions(pugi::xml_document());
+          }
+        } else {
+          // No extensions stored - set empty
+          point->SetCustomExtensions(pugi::xml_document());
+        }
 
         //    Add the point HTML links
         const char* sqlh = R"(
@@ -1855,7 +1881,8 @@ bool NavObj_dB::LoadAllPoints() {
       "p.visibility, "
       "p.viz_name, "
       "p.shared, "
-      "p.isolated "
+      "p.isolated, "
+      "p.custom_extensions "
       "FROM routepoints p ";
 
   RoutePoint* point = nullptr;
@@ -1904,6 +1931,8 @@ bool NavObj_dB::LoadAllPoints() {
     int shared = sqlite3_column_int(stmtp, col++);
     int isolated = sqlite3_column_int(stmtp, col++);
 
+    std::string xml_string = reinterpret_cast<const char*>(sqlite3_column_text(stmtp, col++));
+
     if (isolated) {
       point =
           new RoutePoint(latitude, longitude, symbol, name, point_guid, false);
@@ -1928,6 +1957,17 @@ bool NavObj_dB::LoadAllPoints() {
       point->SetNameShown(viz_name == 1);
       point->SetShared(shared == 1);
       point->m_bIsolatedMark = (isolated == 1);
+
+      if (!xml_string.empty()) {
+        pugi::xml_parse_result result = point->m_customExtensions.load_string(xml_string.c_str());
+        if (!result) {
+          // Handle parse error - reset to empty
+          point->SetCustomExtensions(pugi::xml_document());
+        }
+      } else {
+        // No extensions stored - set empty
+        point->SetCustomExtensions(pugi::xml_document());
+      }
 
       if (point_time_string.size()) {
         wxString sdt(point_time_string.c_str());
