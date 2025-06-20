@@ -525,6 +525,50 @@ bool RestServer::CheckApiKey(const RestIoEvtData& evt_data) {
   return false;
 }
 
+std::string escapeJson(const std::string& str) {
+      std::string escaped = str;
+
+      // Replace backslashes first
+      size_t pos = 0;
+      while ((pos = escaped.find("\\", pos)) != std::string::npos)
+  {
+          escaped.replace(pos, 1, "\\\\");
+          pos += 2;
+      }
+
+      // Replace double quotes
+      pos = 0;
+      while ((pos = escaped.find("\"", pos)) != std::string::npos)
+  {
+          escaped.replace(pos, 1, "\\\"");
+          pos += 2;
+      }
+
+      // Replace control characters
+      pos = 0;
+      while ((pos = escaped.find("\n", pos)) != std::string::npos)
+  {
+          escaped.replace(pos, 1, "\\n");
+          pos += 2;
+      }
+
+      pos = 0;
+      while ((pos = escaped.find("\r", pos)) != std::string::npos)
+  {
+          escaped.replace(pos, 1, "\\r");
+          pos += 2;
+      }
+
+      pos = 0;
+      while ((pos = escaped.find("\t", pos)) != std::string::npos)
+  {
+          escaped.replace(pos, 1, "\\t");
+          pos += 2;
+      }
+
+      return escaped;
+  }
+
 void RestServer::HandleServerMessage(ObservedEvt& event) {
   auto evt_data = UnpackEvtPointer<RestIoEvtData>(event);
   m_reply_body = "";
@@ -609,12 +653,12 @@ void RestServer::HandleServerMessage(ObservedEvt& event) {
 
 
         if (ss.str() != "[") ss << ", ";
-        ss << "[ \"" << r->GetGUID() << "\", \"" << r->GetName() << "\", \""<< gpx_string << "\"]";
+        ss << "[ \"" << r->GetGUID() << "\", \"" << r->GetName() << "\", \"" << escapeJson(gpx_string) << "\"]";
       }
       ss << "]";
       std::string reply(kListRoutesReply);
       ocpn::replace(reply, "@version@", PACKAGE_VERSION);
-      ocpn::replace(reply, "@routes@", ss.str());
+      ocpn::replace(reply, "\"@routes@\"", ss.str());
       m_reply_body = reply;
       UpdateReturnStatus(RestServerResult::NoError);
     } break;
