@@ -53,11 +53,19 @@ jobs:
           ls -l build/$CONFIGURATION/opencpn.exe || exit 1
           ls -l build/cli/$CONFIGURATION/opencpn-cmd.exe || exit 1
           ls -l build/test/$CONFIGURATION/tests.exe || exit 1
+
+      - name: "Create installer"
+        shell: cmd
+        run: |
+          cd build
+          cpack -G NSIS
+
       - name: "Upload artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: opencpn-windows-executables-${{ github.run_number }}
+          name: opencpn-windows-installer-${{ github.run_number }}
           path: |
+            build/*setup.exe
             build/${{ env.CONFIGURATION }}/opencpn.exe
             build/cli/${{ env.CONFIGURATION }}/opencpn-cmd.exe
 
