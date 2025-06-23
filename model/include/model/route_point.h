@@ -33,6 +33,8 @@
 
 #include "model/hyperlink.h"
 
+#include "pugixml.hpp"
+
 #include "bbox.h"
 
 #define MAX_INT_VAL 2147483647  // max possible integer value before 'rollover'
@@ -160,6 +162,20 @@ public:
   void SetWaypointRangeRingsColour(wxColour wxc_WaypointRangeRingsColour) {
     m_wxcWaypointRangeRingsColour = wxc_WaypointRangeRingsColour;
   };
+  void SetCustomExtensions(const pugi::xml_document& customExtensions){
+    try {
+      m_customExtensions.reset();
+      for (pugi::xml_node child = customExtensions.first_child(); child; child = child.next_sibling()) {
+        m_customExtensions.append_copy(child);
+      }
+    } catch (const std::exception& e) {
+      std::cout << "SetCustomExtensions error: " << e.what() << std::endl;
+      m_customExtensions.reset();
+    } catch (...) {
+      std::cout << "Unknown error in SetCustomExtensions" << std::endl;
+      m_customExtensions.reset();
+    }
+  }
   void SetTideStation(wxString TideStation) { m_TideStation = TideStation; };
   void SetScaMin(wxString str);
   void SetScaMin(long val);
@@ -608,6 +624,8 @@ private:
   bool m_bsharedMark /*m_bKeepXRoute*/;
   unsigned int m_dragIconTexture;
   int m_dragIconTextureWidth, m_dragIconTextureHeight;
+public:
+  pugi::xml_document m_customExtensions;
 };
 
 WX_DECLARE_LIST(RoutePoint, RoutePointList);  // establish class as list member

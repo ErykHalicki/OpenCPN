@@ -139,7 +139,8 @@ bool CreateTables(sqlite3* db) {
             viz_name INTEGER,
             shared INTEGER,
             isolated INTEGER,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            custom_extensions TEXT
         );
 
         CREATE TABLE IF NOT EXISTS routepoints_link (
@@ -598,6 +599,44 @@ NavObj_dB::NavObj_dB() {
 
   //  Add any new tables
   CreateTables(m_db);
+  
+  // Ensure custom_extensions column exists for backward compatibility
+  // Check if column already exists
+  const char* check_sql = "PRAGMA table_info(routepoints)";
+  bool column_exists = false;
+  
+  sqlite3_stmt* stmt;
+  if (sqlite3_prepare_v2(m_db, check_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    std::cout << "Checking routepoints table structure:" << std::endl;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      const char* col_name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+      const char* col_type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+      std::cout << "  Column: " << (col_name ? col_name : "NULL") << " (" << (col_type ? col_type : "NULL") << ")" << std::endl;
+      if (col_name && strcmp(col_name, "custom_extensions") == 0) {
+        column_exists = true;
+      }
+    }
+    sqlite3_finalize(stmt);
+  } else {
+    std::cerr << "Failed to check table structure" << std::endl;
+  }
+  
+  // Only add column if it doesn't exist
+  if (!column_exists) {
+    std::cout << "Adding custom_extensions column to routepoints table" << std::endl;
+    const char* alter_sql = "ALTER TABLE routepoints ADD COLUMN custom_extensions TEXT";
+    char* errMsg = nullptr;
+    int alter_result = sqlite3_exec(m_db, alter_sql, nullptr, nullptr, &errMsg);
+    if (alter_result != SQLITE_OK) {
+      std::cerr << "Database schema update failed: " << (errMsg ? errMsg : "Unknown error") << std::endl;
+    } else {
+      std::cout << "Successfully added custom_extensions column" << std::endl;
+    }
+    if (errMsg) sqlite3_free(errMsg);
+  } else {
+    std::cout << "custom_extensions column already exists" << std::endl;
+  }
+  
   sqlite3_close_v2(m_db);
 
   m_open_result = sqlite3_open_v2(db_filename.ToStdString().c_str(), &m_db,
@@ -1374,7 +1413,8 @@ bool NavObj_dB::UpdateDBRoutePointAttributes(RoutePoint* point) {
       "visibility = ?, "
       "viz_name = ?, "
       "shared = ?, "
-      "isolated = ? "
+      "isolated = ?,"
+      "custom_extensions = ? "
       "WHERE guid = ?";
 
   sqlite3_stmt* stmt;
@@ -1419,7 +1459,16 @@ bool NavObj_dB::UpdateDBRoutePointAttributes(RoutePoint* point) {
     int iso = point->m_bIsolatedMark;
     sqlite3_bind_int(stmt, 23, iso);  // point->m_bIsolatedMark);
 
-    sqlite3_bind_text(stmt, 24, point->m_GUID.ToStdString().c_str(), -1,
+    std::ostringstream stream;
+    if (!point->m_customExtensions.empty()) {
+      point->m_customExtensions.save(stream, "  ");
+      sqlite3_bind_text(stmt, 24, stream.str().c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+      sqlite3_bind_null(stmt, 24);
+    }
+
+
+    sqlite3_bind_text(stmt, 25, point->m_GUID.ToStdString().c_str(), -1,
                       SQLITE_TRANSIENT);
 
   } else {
@@ -1535,6 +1584,7 @@ bool NavObj_dB::DeleteRoute(Route* route) {
 }
 
 bool NavObj_dB::LoadAllRoutes() {
+  std::cout << "=== LoadAllRoutes() called ===" << std::endl;
   const char* sql =
       "SELECT "
       "guid, "
@@ -1555,13 +1605,20 @@ bool NavObj_dB::LoadAllRoutes() {
 
   sqlite3_stmt* stmt;
   if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Failed to prepare LoadAllRoutes SQL statement" << std::endl;
     return false;
   }
+  
+  std::cout << "LoadAllRoutes SQL prepared successfully" << std::endl;
 
   int errcode0 = SQLITE_OK;
+  int route_count = 0;
   while ((errcode0 = sqlite3_step(stmt)) == SQLITE_ROW) {
+    route_count++;
+    std::cout << "Loading route #" << route_count << std::endl;
     std::string guid =
         reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    std::cout << "Route GUID: " << guid << std::endl;
     std::string name =
         reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
     std::string description =
@@ -1583,6 +1640,7 @@ bool NavObj_dB::LoadAllRoutes() {
         reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
 
     Route* route = NULL;
+    std::cout << "About to load route points for route: " << guid << std::endl;
 
     //  Add the route_points
     const char* sql = R"(
@@ -1616,7 +1674,8 @@ bool NavObj_dB::LoadAllRoutes() {
         "p.visibility, "
         "p.viz_name, "
         "p.shared, "
-        "p.isolated "
+        "p.isolated, "
+        "p.custom_extensions "
         "FROM routepoints_link tp "
         "JOIN routepoints p ON p.guid = tp.point_guid "
         "WHERE tp.route_guid = ? "
@@ -1624,15 +1683,21 @@ bool NavObj_dB::LoadAllRoutes() {
 
     sqlite3_stmt* stmtp;
     if (sqlite3_prepare_v2(m_db, sqlp, -1, &stmtp, nullptr) != SQLITE_OK) {
+      std::cerr << "Failed to prepare route points query for route: " << guid << std::endl;
       ReportError("LoadAllRoutes-B:prepare");
       return false;
     }
-
+    
+    std::cout << "Route points query prepared, binding route GUID: " << guid << std::endl;
     sqlite3_bind_text(stmtp, 1, guid.c_str(), -1, SQLITE_TRANSIENT);
 
     int GPXSeg = 0;
     int errcode = SQLITE_OK;
+    int point_count = 0;
+    std::cout << "Starting to load route points for route: " << guid << std::endl;
     while ((errcode = sqlite3_step(stmtp)) == SQLITE_ROW) {
+      point_count++;
+      std::cout << "Loading route point #" << point_count << " for route: " << guid << std::endl;
       if (!route) {
         route = new Route;
         route->m_GUID = guid;
@@ -1692,6 +1757,11 @@ bool NavObj_dB::LoadAllRoutes() {
       int shared = sqlite3_column_int(stmtp, col++);
       int isolated = sqlite3_column_int(stmtp, col++);
 
+      const char* xml_text = reinterpret_cast<const char*>(sqlite3_column_text(stmtp, col++));
+      std::string xml_string = xml_text ? xml_text : "";
+      std::cout << "Loading route point " << point_guid << ", custom_extensions length: " << xml_string.length() << std::endl;
+
+
       RoutePoint* point;
       // RoutePoint exists already, in another route?
       auto containing_route =
@@ -1728,6 +1798,18 @@ bool NavObj_dB::LoadAllRoutes() {
         point->SetNameShown(viz_name == 1);
         point->SetShared(shared == 1);
         point->m_bIsolatedMark = (isolated == 1);
+
+        if (!xml_string.empty()) {
+          pugi::xml_parse_result result = point->m_customExtensions.load_string(xml_string.c_str());
+          if (!result) {
+            // Handle parse error - reset to empty
+            std::cerr << "Failed to parse custom extensions for point " << point_guid << ": " << result.description() << std::endl;
+            point->m_customExtensions.reset();
+          }
+        } else {
+          // No extensions stored - set empty
+          point->m_customExtensions.reset();
+        }
 
         //    Add the point HTML links
         const char* sqlh = R"(
@@ -1824,7 +1906,12 @@ bool NavObj_dB::LoadAllRoutes() {
                             // changes will force the xml file to be updated?
 
   }  // routes
+  sqlite3_finalize(stmt);
+  
+  std::cout << "LoadAllRoutes completed. Total routes loaded: " << route_count << std::endl;
+  
   if (errcode0 != SQLITE_DONE) {
+    std::cerr << "LoadAllRoutes error: errcode=" << errcode0 << std::endl;
     ReportError("LoadAllRoutes-C:step");
     return false;
   }
@@ -1833,6 +1920,7 @@ bool NavObj_dB::LoadAllRoutes() {
 }
 
 bool NavObj_dB::LoadAllPoints() {
+  std::cout << "=== LoadAllPoints() called ===" << std::endl;
   const char* sqlp =
       "SELECT "
       "p.guid, "
@@ -1858,7 +1946,8 @@ bool NavObj_dB::LoadAllPoints() {
       "p.visibility, "
       "p.viz_name, "
       "p.shared, "
-      "p.isolated "
+      "p.isolated, "
+      "p.custom_extensions "
       "FROM routepoints p ";
 
   RoutePoint* point = nullptr;
@@ -1907,6 +1996,10 @@ bool NavObj_dB::LoadAllPoints() {
     int shared = sqlite3_column_int(stmtp, col++);
     int isolated = sqlite3_column_int(stmtp, col++);
 
+    const char* xml_text = reinterpret_cast<const char*>(sqlite3_column_text(stmtp, col++));
+    std::string xml_string = xml_text ? xml_text : "";
+    std::cout << "LoadAllPoints: point " << point_guid << ", custom_extensions length: " << xml_string.length() << std::endl;
+
     if (isolated) {
       point =
           new RoutePoint(latitude, longitude, symbol, name, point_guid, false);
@@ -1931,6 +2024,17 @@ bool NavObj_dB::LoadAllPoints() {
       point->SetNameShown(viz_name == 1);
       point->SetShared(shared == 1);
       point->m_bIsolatedMark = (isolated == 1);
+
+      if (!xml_string.empty()) {
+        pugi::xml_parse_result result = point->m_customExtensions.load_string(xml_string.c_str());
+        if (!result) {
+          // Handle parse error - reset to empty
+          point->m_customExtensions.reset();
+        }
+      } else {
+        // No extensions stored - set empty
+        point->m_customExtensions.reset();
+      }
 
       if (point_time_string.size()) {
         wxString sdt(point_time_string.c_str());
