@@ -54,9 +54,9 @@ jobs:
           ls -l build/cli/$CONFIGURATION/opencpn-cmd.exe || exit 1
           ls -l build/test/$CONFIGURATION/tests.exe || exit 1
       - name: "Upload artifacts"
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: opencpn-windows-executables
+          name: opencpn-windows-executables-${{ github.run_number }}
           path: |
             build/${{ env.CONFIGURATION }}/opencpn.exe
             build/cli/${{ env.CONFIGURATION }}/opencpn-cmd.exe
