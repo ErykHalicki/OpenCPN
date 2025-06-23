@@ -146,7 +146,7 @@ bool CreateTables(sqlite3* db) {
             route_guid TEXT,
             point_guid TEXT,
             point_order INTEGER,
-            PRIMARY KEY (route_guid, point_guid),
+            PRIMARY KEY (route_guid, point_order),
             FOREIGN KEY (route_guid) REFERENCES routes(guid) ON DELETE CASCADE
         );
 
@@ -1159,6 +1159,8 @@ bool NavObj_dB::InsertRoute(Route* route) {
 };
 
 bool NavObj_dB::UpdateRoute(Route* route) {
+  sqlite3_exec(m_db, "BEGIN TRANSACTION", 0, 0, nullptr);
+
   bool rv = false;
   char* errMsg = 0;
 
@@ -1217,6 +1219,7 @@ bool NavObj_dB::UpdateRoute(Route* route) {
       linknode = linknode->GetNext();
     }
   }
+  sqlite3_exec(m_db, "COMMIT", 0, 0, nullptr);
 
   rv = true;
   if (errMsg) rv = false;
